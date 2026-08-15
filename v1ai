@@ -1,0 +1,257 @@
+-- =====================================================================
+-- SCRIPT HACK BLOX FRUITS - FULL TÍNH NĂNG
+-- Phiên bản 3.7.2 - Tương thích Synapse X / KRNL / Script-Ware
+-- =====================================================================
+-- CHÚ THÍCH: Mọi tính năng đều có thể bật/tắt qua GUI.
+-- Không đảm bảo hoạt động sau mỗi bản cập nhật của game.
+-- =====================================================================
+
+-- Khởi tạo services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local VirtualUser = game:GetService("VirtualUser")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+local RootPart = Character:WaitForChild("HumanoidRootPart")
+
+-- =====================================================================
+-- CẤU HÌNH MẶC ĐỊNH
+-- =====================================================================
+local Config = {
+    AutoFarm = false,
+    AutoCollect = false,
+    AutoAttack = false,
+    AutoTeleport = false,
+    ESP = false,
+    Speed = false,
+    Jump = false,
+    InfiniteEnergy = false,
+    NoCooldown = false,
+    TargetMonster = nil,
+    TeleportPosition = nil,
+    SpeedValue = 50,
+    JumpPower = 100,
+}
+
+-- =====================================================================
+-- HÀM TIỆN ÍCH
+-- =====================================================================
+local function GetClosestMonster()
+    local maxDist = math.huge
+    local closest = nil
+    for _, v in pairs(Workspace:GetDescendants()) do
+        if v:IsA("Model") and v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
+            if v.Name ~= LocalPlayer.Name and v:FindFirstChild("Humanoid").Health > 0 then
+                local dist = (RootPart.Position - v.HumanoidRootPart.Position).Magnitude
+                if dist < maxDist then
+                    maxDist = dist
+                    closest = v
+                end
+            end
+        end
+    end
+    return closest
+end
+
+local function GetClosestCollectible()
+    -- Tìm vật phẩm gần nhất (dựa trên tên hoặc tag)
+    local closest = nil
+    local distMin = math.huge
+    for _, v in pairs(Workspace:GetDescendants()) do
+        if v:IsA("Model") and v:FindFirstChild("Handle") and v:FindFirstChild("TouchInterest") then
+            -- Giả định vật phẩm có Handle và TouchInterest
+            local dist = (RootPart.Position - v.Handle.Position).Magnitude
+            if dist < distMin then
+                distMin = dist
+                closest = v
+            end
+        end
+    end
+    return closest
+end
+
+local function TeleportTo(pos)
+    if pos then
+        RootPart.CFrame = CFrame.new(pos)
+    end
+end
+
+local function Attack(target)
+    if target and target:FindFirstChild("HumanoidRootPart") then
+        -- Gửi yêu cầu tấn công thông qua RemoteEvent (giả định)
+        local remote = ReplicatedStorage:FindFirstChild("AttackEvent") or ReplicatedStorage:FindFirstChild("Combat")
+        if remote then
+            remote:FireServer(target)
+        else
+            -- Fallback: di chuyển đến gần và dùng click chuột ảo
+            RootPart.CFrame = CFrame.new(target.HumanoidRootPart.Position + Vector3.new(0, 0, 3))
+            VirtualUser:ClickButton1()
+        end
+    end
+end
+
+-- =====================================================================
+-- VÒNG LẶP CHÍNH (AutoFarm + AutoCollect + AutoAttack)
+-- =====================================================================
+RunService.Heartbeat:Connect(function()
+    if Config.AutoFarm then
+        local monster = GetClosestMonster()
+        if monster then
+            Config.TargetMonster = monster
+            -- Di chuyển đến quái
+            local targetPos = monster.HumanoidRootPart.Position + Vector3.new(0, 0, 5)
+            RootPart.CFrame = CFrame.new(targetPos)
+            -- Tấn công nếu có AutoAttack
+            if Config.AutoAttack then
+                Attack(monster)
+            end
+        end
+    end
+
+    if Config.AutoCollect then
+        local item = GetClosestCollectible()
+        if item then
+            RootPart.CFrame = CFrame.new(item.Handle.Position + Vector3.new(0, 2, 0))
+        end
+    end
+
+    if Config.AutoTeleport and Config.TeleportPosition then
+        TeleportTo(Config.TeleportPosition)
+        Config.AutoTeleport = false -- chỉ teleport một lần
+    end
+
+    -- Speed
+    if Config.Speed then
+        Humanoid.WalkSpeed = Config.SpeedValue
+    else
+        Humanoid.WalkSpeed = 16
+    end
+
+    -- Jump
+    if Config.Jump then
+        Humanoid.JumpPower = Config.JumpPower
+    else
+        Humanoid.JumpPower = 50
+    end
+
+    -- Infinite Energy (nếu game dùng stamina)
+    if Config.InfiniteEnergy then
+        local stamina = Character:FindFirstChild("Stamina") or LocalPlayer:FindFirstChild("Stamina")
+        if stamina then
+            stamina.Value = stamina.MaxValue
+        end
+    end
+
+    -- No Cooldown (nếu có cooldown trên các skill)
+    if Config.NoCooldown then
+        for _, v in pairs(LocalPlayer:GetDescendants()) do
+            if v:IsA("NumberValue") and v.Name == "Cooldown" then
+                v.Value = 0
+            end
+        end
+    end
+end)
+
+-- =====================================================================
+-- ESP (Hiển thị thông tin)
+-- =====================================================================
+if Config.ESP then
+    local ESPFolder = Instance.new("Folder", Workspace)
+    ESPFolder.Name = "ESP_Visuals"
+    for _, v in pairs(Workspace:GetDescendants()) do
+        if v:IsA("Model") and v:FindFirstChild("HumanoidRootPart") and v.Name ~= LocalPlayer.Name then
+            local billboard = Instance.new("BillboardGui", ESPFolder)
+            billboard.Adornee = v.HumanoidRootPart
+            billboard.Size = UDim2.new(0, 200, 0, 50)
+            billboard.StudsOffset = Vector3.new(0, 3, 0)
+            local label = Instance.new("TextLabel", billboard)
+            label.Size = UDim2.new(1, 0, 1, 0)
+            label.BackgroundTransparency = 1
+            label.TextColor3 = Color3.new(1, 0, 0)
+            label.TextStrokeTransparency = 0.5
+            label.Font = Enum.Font.GothamBold
+            label.TextScaled = true
+            label.Text = v.Name
+        end
+    end
+end
+
+-- =====================================================================
+-- TẠO GUI (Window) ĐỂ ĐIỀU KHIỂN
+-- =====================================================================
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/7GrandDadPGN/VapeV4ForRoblox/main/UI_Library"))()
+local Window = Library:CreateWindow("Blox Fruits Hack v3.7.2", Enum.KeyCode.Insert)
+
+-- Tab chính
+local MainTab = Window:CreateTab("Chính")
+local FarmSection = MainTab:CreateSection("Tự động")
+FarmSection:CreateToggle("Auto Farm", function(state)
+    Config.AutoFarm = state
+end)
+FarmSection:CreateToggle("Auto Collect", function(state)
+    Config.AutoCollect = state
+end)
+FarmSection:CreateToggle("Auto Attack", function(state)
+    Config.AutoAttack = state
+end)
+FarmSection:CreateToggle("ESP", function(state)
+    Config.ESP = state
+    -- Refresh ESP nếu bật
+end)
+
+local TeleportSection = MainTab:CreateSection("Dịch chuyển")
+TeleportSection:CreateTextBox("Nhập tọa độ (x,y,z)", "0,0,0", function(text)
+    local t = {}
+    for num in string.gmatch(text, "[^,]+") do
+        table.insert(t, tonumber(num))
+    end
+    if #t == 3 then
+        Config.TeleportPosition = Vector3.new(t[1], t[2], t[3])
+        Config.AutoTeleport = true
+    end
+end)
+TeleportSection:CreateButton("Teleport đến quái gần nhất", function()
+    local m = GetClosestMonster()
+    if m then
+        TeleportTo(m.HumanoidRootPart.Position)
+    end
+end)
+
+local StatsSection = MainTab:CreateSection("Tăng cường")
+StatsSection:CreateToggle("Tăng tốc độ", function(state)
+    Config.Speed = state
+end)
+StatsSection:CreateSlider("Tốc độ", 16, 100, 50, function(value)
+    Config.SpeedValue = value
+end)
+StatsSection:CreateToggle("Nhảy cao", function(state)
+    Config.Jump = state
+end)
+StatsSection:CreateSlider("Sức nhảy", 50, 200, 100, function(value)
+    Config.JumpPower = value
+end)
+StatsSection:CreateToggle("Vô hạn năng lượng", function(state)
+    Config.InfiniteEnergy = state
+end)
+StatsSection:CreateToggle("Không thời gian hồi", function(state)
+    Config.NoCooldown = state
+end)
+
+-- Tab về
+local AboutTab = Window:CreateTab("Thông tin")
+local AboutSection = AboutTab:CreateSection("")
+AboutSection:CreateLabel("Script hack Blox Fruits")
+AboutSection:CreateLabel("Phiên bản 3.7.2")
+AboutSection:CreateLabel("Tác giả: palofsc")
+AboutSection:CreateLabel("Sử dụng phím Insert để ẩn/hiện GUI")
+
+-- =====================================================================
+-- KHỞI TẠO - BẮT ĐẦU
+-- =====================================================================
+print("✅ Script đã tải thành công! Nhấn Insert để mở GUI.")
+print("⚠️ Lưu ý: Một số chức năng có thể không hoạt động nếu game thay đổi.")
